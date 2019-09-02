@@ -1,0 +1,13 @@
+{
+  "video" : {
+    "width" : 1920,
+    "height":1080
+  },
+  "mysql" : {
+    "servername" : "localhost",
+    "database":"videoDB",
+    "username" : "video_develop",
+    "password":"wK33g9N8#x"
+  }
+}
+
