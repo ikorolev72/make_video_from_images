@@ -8,13 +8,22 @@ class Common_processing
 {
     private $error; // last error
     private $debug;
+    private $log;
 
-    public function __construct($debug = false)
+    public function __construct($log=null, $debug = false)
     {
         $this->error = '';
         $this->debug = $debug;
+        $this->log = $log;  // absolute path to log file
     }
 
+
+
+    /**
+     * doExec
+     * @param    string    $Command
+     * @return integer 0-error, 1-success
+     */
     public function doExec($Command)
     {
         $outputArray = array();
@@ -30,14 +39,14 @@ class Common_processing
         return 1;
     }
 
-    public function getTempioraryFile($tmpDir, $extension, &$tmpFiles)
+    public function getTemporaryFile($tmpDir, $extension, &$tmpFiles)
     {
         $tmp = $tmpDir . "/" . time() . rand(1000, 9999) . ".$extension";
         $tmpFiles[] = $tmp;
         return ($tmp);
     }
 
-    public function removeTempioraryFiles($tmpFiles)
+    public function removeTemporaryFiles($tmpFiles)
     {
         foreach ($tmpFiles as $tmpFile) {
             @unlink($tmpFile);
@@ -102,6 +111,10 @@ class Common_processing
         $stderr = fopen('php://stderr', 'w');
         fwrite($stderr, "$date   $message" . PHP_EOL);
         fclose($stderr);
+
+        if (!empty($this->log)) {
+            file_put_contents($this->log, "$date   $message" . PHP_EOL, FILE_APPEND | LOCK_EX) ;
+        }
     }
 
     public function readJson($configFile)
