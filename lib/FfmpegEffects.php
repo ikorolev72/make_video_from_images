@@ -10,7 +10,7 @@
  */
 
 require_once __DIR__ . '/common_processing.php';
-class FfmpegEffects extends TextEffects
+class FfmpegEffects extends Common_processing
 {
     private $ffmpegSettings = array();
     private $error; # last error
@@ -148,29 +148,6 @@ class FfmpegEffects extends TextEffects
         return ($str);
     }
 
-    /**
-     * getLastError
-     * return last error description
-     *
-     * @return    string
-     */
-    public function getLastError()
-    {
-        return ($this->error);
-    }
-
-    /**
-     * setLastError
-     * set last error description
-     *
-     * @param    string  $err
-     * @return    string
-     */
-    private function setLastError($err)
-    {
-        $this->error = $err;
-        return (true);
-    }
 
     /**
      * getFfmpegSettings
@@ -571,10 +548,13 @@ class FfmpegEffects extends TextEffects
         $styles="";
         $dialog="";
         foreach ($textRecord as $key=>$value) {
+            if ($value["content_type"]!='text') {
+                continue;
+            }
             // prepare styles
             $styleName="Style_$key";
 
-            $fontFile=$value["font_directory"]."/".$value["text_font"];
+            $fontFile=$this->fixPath($value["font_directory"]."/".$value["text_font"]);
             $assFontProperties = $this->getFontProperties($fontFile);
             $font = $assFontProperties['family'];
             $styleBold = $assFontProperties['bold'] ? -1 : 0;
@@ -587,8 +567,21 @@ class FfmpegEffects extends TextEffects
             $marginL=$value["location_x"];
             $marginR=$width- $value["location_x"] - $value["width"];
             $marginV=$value["location_y"];
-    
-            $styles .= "Style: $styleName,$font,$fontSize,$fontColor,&H000000FF,&H000000FF,$shadowColor,$styleBold,$styleItalic,0,0,100,100,0,0,1,$outLine,$shadow,7,0,0,10,1" . PHP_EOL;
+            $fontSize=$value["text_size"];
+            $alingment=7; // top left
+            switch ($value["text_align"]) {
+                case 'left':
+                $alingment=7;
+                break;
+                case 'right':
+                $alingment=9;
+                break;
+                case 'center':
+                $alingment=8;
+                break;
+            }
+
+            $styles .= "Style: $styleName,$font,$fontSize,$fontColor,&H000000FF,&H000000FF,$shadowColor,$styleBold,$styleItalic,0,0,100,100,0,0,1,$outLine,$shadow,$alingment,$marginL,$marginR,$marginV,1" . PHP_EOL;
 
             // prepare dialogs
             $dialogStart = $this->float2time($value["fade_in"]);
@@ -600,7 +593,7 @@ class FfmpegEffects extends TextEffects
             $shadowOffsetX= $value["text_shadow_offset_x"] ;
             $shadowOffsetY= $value["text_shadow_offset_y"] ;
 
-            $dialog .="Dialogue: 0,$dialogStart,$dialogEnd,$styleName,,0,0,0,,{\\fad($fadeIn, $fadeOut)\\shad$shadowOffsetX\\yshad$shadowOffsetY}$fixedText" . PHP_EOL;
+            $dialog .="Dialogue: $layer,$dialogStart,$dialogEnd,$styleName,,0,0,0,,{\\shad$shadowOffsetX\\yshad$shadowOffsetY\\fad($fadeIn, $fadeOut)}$fixedText" . PHP_EOL;
         }
         $content = "[Script Info]
 ; Aegisub 3.2.2
@@ -610,7 +603,7 @@ class FfmpegEffects extends TextEffects
 ScriptType: v4.00+
 PlayResX: $width
 PlayResY: $height
-WrapStyle: 2
+WrapStyle: 0
 YCbCr Matrix: TV.601
 
 
@@ -621,7 +614,8 @@ $styles
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 $dialog";
-        if (!file_put_contents($temporaryAssFile, $content)) {
+
+        if (! $writenBytes=file_put_contents($temporaryAssFile, $content)) {
             $this->setLastError("Error: Cannot save temporary subtitles file '$temporaryAssFile'");
             return (false);
         }
@@ -634,47 +628,71 @@ $dialog";
         $input=array();
         $fadeFilter=array();
         $concatFilter=array();
+        $ffmpeg=$this->ffmpegSettings['general']['ffmpeg'] ;
         $key=0;
         foreach ($videoRecord as $k => $value) {
+            $isAudio=false;
             switch ($value["content_type"]) {
                 case 'video':
-                    $inputFile=$value["source_video_directory"]."/".$value["file_name"];
+                    $inputFile=$this->fixPath($value["source_video_directory"]."/".$value["file_name"]);
                     $loop="";
                     break;
                 case 'photo':
-                    $inputFile=$value["image_directory"]."/".$value["file_name"];
+                    $inputFile=$this->fixPath($value["image_directory"]."/".$value["file_name"]);
                     $loop="-loop 1";
-                break;
-            }
+                    break;
+                case 'audio':
+                    $inputFile=$this->fixPath($value["audio_directory"]."/".$value["file_name"]);
+                    $audioIndex=$key;
+                    $isAudio=true;
+                    $loop="";
+                    break;
+
+                default:
+                    continue 2;
+                    break;
+                }
+    
             if (!file_exists($inputFile)) {
                 $this->setLastError("Error: Input file '$inputFile' do not exists") ;
                 return(false);
             }
 
             $fadeInDuration= floatval($value["full_alpha"] - $value["fade_in"]);
-            $fadeOutStart= floatval($value["full_alpha"] - $value["fade_in"]);
-            $fadeOutDuration= floatval($value["full_alpha"] - $value["fade_out"]);
+            $fadeOutStart= floatval($value["fade_out"]- $value["fade_in"]);
+            $fadeOutDuration= floatval($value["zero_alpha"] - $value["fade_out"]);
 
             $start=0;
-            $end=$value["zero_alpha"];
-            $input[]="$loop -i $inputFile -ss $start -to $end";
-            $fadeFilter[]="[$key:v] scale=w=$width:h=$height, fade=t=in:s=$start:duration=$fadeInDuration, fade=t=out:s=$fadeOutStart:duration=$fadeOutDuration [video$key] ;";
-            $concatFilter[]="[video$key]";
+
+            if ($isAudio) {
+                $end=$value["audio_duration"];
+                continue;
+            } else {
+                $end=$value["zero_alpha"]-$value["fade_in"];
+                $fadeFilter[]="[$key:v] scale=w=$width:h=$height, fade=t=in:st=$start:duration=$fadeInDuration, fade=t=out:st=$fadeOutStart:duration=$fadeOutDuration [video$key] ;";
+                $concatFilter[]="[video$key]";
+            }
+            $input[]="$loop -ss $start -t $end -i $inputFile";
+
             $key++;
         }
         $cmd = join(" ", array(
-            $this->ffmpeg,
+            $ffmpeg,
             "-y", // overwrite output file
             "-loglevel info", //  ( default level is info )
             join(" ", $input), // input
             "-filter_complex \" ", // use filters
+            //"[$audioIndex:a] anull [a];",
             join(" ", $fadeFilter), // input
             join("", $concatFilter), // input
             "concat=n=",
             count($concatFilter),
-            ":v=1:a=0 , ass=$temporaryAssFile [v]",
-            "\" -map \"[v]\" -an ",
+            ":v=1:a=0 , ass=$temporaryAssFile [v] \"",
+            " -map \"[v]\"",
             "-c:v h264 -crf 20 -preset veryfast -pix_fmt yuv420p", // use output video codec h264 with Constant Rate Factor(crf=20), and veryfast codec settings
+            //"-map \"[a]\"",
+            //"-c:a aac",
+            "-an",
             "-f mp4 $output", // output in mp4 format
         ));
 
@@ -683,4 +701,145 @@ $dialog";
 
 
 
+    public function prepareVideoFromPhoto($value, $output, $width=1920, $height=1080)
+    {
+        $ffmpeg=$this->ffmpegSettings['general']['ffmpeg'] ;
+        $key=0;
+        //$value=$videoRecord;
+        switch ($value["content_type"]) {
+                case 'video':
+                    $inputFile=$this->fixPath($value["source_video_directory"]."/".$value["file_name"]);
+                    $loop="";
+                    break;
+                case 'photo':
+                    $inputFile=$this->fixPath($value["image_directory"]."/".$value["file_name"]);
+                    $loop="-loop 1";
+                    break;
+                default:
+                    $this->setLastError("Error: Cannot prepare temporary video. Unknown content_type: ".$value["content_type"]);
+                    return(false);
+                    break;
+                }
+    
+        if (!file_exists($inputFile)) {
+            $this->setLastError("Error: Input file '$inputFile' do not exists") ;
+            return(false);
+        }
+
+        $fadeInDuration= floatval($value["full_alpha"] - $value["fade_in"]);
+        $fadeOutStart= floatval($value["fade_out"]- $value["fade_in"]);
+        $fadeOutDuration= floatval($value["zero_alpha"] - $value["fade_out"]);
+
+        $start=0;
+        $end=$value["zero_alpha"]-$value["fade_in"];
+        $fadeFilter="[0:v] scale=w=$width:h=$height, fade=t=in:st=$start:duration=$fadeInDuration, fade=t=out:st=$fadeOutStart:duration=$fadeOutDuration [v] \"";
+        $input="$loop -ss $start -t $end -i $inputFile";
+
+        $cmd = join(" ", array(
+            $ffmpeg,
+            "-y", // overwrite output file
+            "-loglevel info", //  ( default level is info )
+            $input, // input
+            "-filter_complex \" ", // use filters
+            $fadeFilter, //
+            " -map \"[v]\"",
+            "-c:v h264 -crf 23 -preset veryfast -pix_fmt yuv420p", // use output video codec h264 with Constant Rate Factor(crf=20), and veryfast codec settings
+            "-an",
+            "-mpegts_copyts 1 -f mpegts $output", // output in mp4 format
+        ));
+
+        return($cmd);
+    }
+
+
+
+    public function prepareVideoFromPhotoFast($value, $output, $width=1920, $height=1080)
+    {
+        $ffmpeg=$this->ffmpegSettings['general']['ffmpeg'] ;
+        $key=0;
+        //$value=$videoRecord;
+        $input=array();
+        $fadeFilter=array();
+        $concatFilter='';
+                    
+        $fadeInDuration= floatval($value["full_alpha"] - $value["fade_in"]);
+        $fadeOutStart= floatval($value["fade_out"]- $value["fade_in"]);
+        $fadeOutDuration= floatval($value["zero_alpha"] - $value["fade_out"]);      
+
+        switch ($value["content_type"]) {
+                case 'video':
+                    $start=0;
+                    $end=$value["zero_alpha"]-$value["fade_in"];
+                    $inputFile=$this->fixPath($value["source_video_directory"]."/".$value["file_name"]);
+                    $input[]="-ss $start -t $end -i $inputFile";  
+                    $fadeFilter[]="[0:v] scale=w=$width:h=$height, fade=t=in:st=$start:duration=$fadeInDuration, fade=t=out:st=$fadeOutStart:duration=$fadeOutDuration, setpts=PTS-STARTPTS [v0];";                 
+                    $concatFilter.="[v0] null [v] \"" ;                    
+                    break;
+                case 'photo':
+                    $inputFile=$this->fixPath($value["image_directory"]."/".$value["file_name"]);
+              
+                    $start=0;
+                    $end=$fadeInDuration;
+                    $input[]="-loop 1 -r 25 -ss $start -t $end -i $inputFile";
+
+                    $end=$fadeOutStart-$fadeInDuration;
+                    $input[]="-loop 1 -r 1 -ss $start -t $end -i $inputFile";
+
+                    $end=$fadeOutDuration;
+                    $input[]="-loop 1 -r 25 -ss $start -t $end -i $inputFile";                    
+
+                    $fadeFilter[]="[0:v] scale=w=$width:h=$height, fade=t=in:st=$start:duration=$fadeInDuration, setpts=PTS-STARTPTS  [v0];";
+                    $fadeFilter[]="[1:v] scale=w=$width:h=$height, setpts=PTS-STARTPTS  [v1];";
+                    $fadeFilter[]="[2:v] scale=w=$width:h=$height, fade=t=out:st=$start:duration=$fadeOutDuration, setpts=PTS-STARTPTS  [v2];";
+                    $concatFilter.="[v0][v1][v2] concat=n=3:v=1:a=0 [v] \"" ;
+                    break;
+                default:
+                    $this->setLastError("Error: Cannot prepare temporary video. Unknown content_type: ".$value["content_type"]);
+                    return(false);
+                    break;
+                }
+    
+        if (!file_exists($inputFile)) {
+            $this->setLastError("Error: Input file '$inputFile' do not exists") ;
+            return(false);
+        }
+
+        $cmd = join(" ", array(
+            $ffmpeg,
+            "-y", // overwrite output file
+            "-loglevel info", //  ( default level is info )
+            join(" ", $input), // input
+            "-filter_complex \" ", // use filters
+            join(" ", $fadeFilter), // input
+            $concatFilter, //
+            " -map \"[v]\"",
+            "-c:v h264 -crf 23 -preset veryfast -pix_fmt yuv420p", // use output video codec h264 with Constant Rate Factor(crf=20), and veryfast codec settings
+            "-an",
+            "-mpegts_copyts 1 -f mpegts $output", // output in mp4 format
+        ));
+
+        return($cmd);
+    }
+
+
+
+    public function collectFinalVideo($videosFromPhotos, $temporaryAssFile, $audioFile, $audioDuration, $output)
+    {
+        $ffmpeg=$this->ffmpegSettings['general']['ffmpeg'] ;
+        $cmd = join(" ", array(
+            $ffmpeg,
+            "-y", // overwrite output file
+            "-loglevel info", //  ( default level is info )
+            "-i $audioFile",
+            "-i 'concat:".join("|", $videosFromPhotos)."'",
+            "-vf 'ass=$temporaryAssFile'",
+            "-c:v h264 -crf 23 -preset veryfast -c:a aac -f mp4 $output", // output in mp4 format
+        ));
+        return($cmd);
+    }
+
+    public function fixPath($path)
+    {
+        return(preg_replace("/\/\//", "/", $path));
+    }
 }

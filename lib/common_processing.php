@@ -32,7 +32,7 @@ class Common_processing
 
     public function getTempioraryFile($tmpDir, $extension, &$tmpFiles)
     {
-        $tmp = $tmpDir . "/" . time() . sha1(rand(100, 1000000)) . ".$extension";
+        $tmp = $tmpDir . "/" . time() . rand(1000, 9999) . ".$extension";
         $tmpFiles[] = $tmp;
         return ($tmp);
     }

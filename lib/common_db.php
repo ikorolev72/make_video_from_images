@@ -73,7 +73,29 @@ class Common_db
         @$mysqli->close();
     }
 
-    public function getRecords($mysqli)
+
+    public function getMessageRecords($mysqli)
+    {
+        $needDisconnect = false;
+        if (!$mysqli) {
+            $needDisconnect = true;
+            $mysqli = $this->dbConnect();
+        }
+        if (!$mysqli) {
+            $this->setLastError("Haven't connection to database");
+            return (false);
+        }
+        $sql="select a.* from video_messages a where a.video_created=? order by a.video_id";
+        $records = $this->execSQL($mysqli, $sql, array("i",0), false) ;
+        if ($needDisconnect) {
+            $this->dbDisconnect($mysqli);
+        }
+        return ($records);
+    }
+
+
+
+    public function getElementRecords($mysqli, $video_id)
     {
         $needDisconnect = false;
         if (!$mysqli) {
@@ -85,8 +107,8 @@ class Common_db
             return (false);
         }
         $sql="select a.*, b.* from video_messages a, video_elements b where a.video_created=? 
-        and a.video_id=b.video_id order by b.video_id, b.object_id";
-        $records = $this->execSQL($dbConnection, $sql, array("i",0), false) ;
+        and a.video_id=b.video_id and a.video_id=? order by b.video_id, b.object_id";
+        $records = $this->execSQL($mysqli, $sql, array("ii",0, $video_id), false) ;
         if ($needDisconnect) {
             $this->dbDisconnect($mysqli);
         }
@@ -104,7 +126,7 @@ class Common_db
             return (false);
         }
         $sql="update video_messages set video_created=1 where video_id=?";
-        if( !$this->execSQL($dbConnection, $sql, array("s", $video_id ), false) ) {
+        if( !$this->execSQL($mysqli, $sql, array("s", $video_id ), false) ) {
             return( false);
         }
         if ($needDisconnect) {

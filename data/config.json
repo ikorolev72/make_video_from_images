@@ -7,7 +7,8 @@
     "servername" : "localhost",
     "database":"videoDB",
     "username" : "video_develop",
-    "password":"wK33g9N8#x"
+    "password":"wK33g9N8#x",
+    "updateMessageRecord": false
   }
 }
 
