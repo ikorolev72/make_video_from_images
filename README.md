@@ -61,11 +61,11 @@ $ php /path_to_script/do_video.php
 ## How to copy to anoter location
 Simple copy folder with script to another directory
 ```bash
-$ cp -pr make_video /new_path/
+$ cp -pr make_video_from_images /new_path/
 ```
 
 ## How to run from crontab
-Add new line `50	23	*	*	* /usr/bin/php /path_to_script/do_video.php >>/log_dir/make_video.log 2>&1` with schedule into crontab
+Add new line `50	23	*	*	* /usr/bin/php /path_to_script/do_video.php >>/log_dir/make_video_from_images.log 2>&1` with schedule into crontab
 ```
 crontab -e 
 ```
