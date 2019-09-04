@@ -47,7 +47,7 @@ sudo mv ffmpeg-4.0.2-64bit-static/ /usr/share/ffmpeg
 sudo ln -s /usr/share/ffmpeg/ffmpeg-4.0.2-64bit-static/ffmpeg /usr/bin/ffmpeg
 sudo ln -s /usr/share/ffmpeg/ffmpeg-4.0.2-64bit-static/ffprobe /usr/bin/ffprobe
 
-
+git clone https://github.com/ikorolev72/make_video_from_images.git
 ```
 
 ## How to run
