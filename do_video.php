@@ -149,7 +149,7 @@ foreach ($video_messages as $m=>$messagesValue) {
 
     if (!empty($config["mysql"]["updateMessageRecord"])) {
         $processing->writeToLog("Info: update record ( set video completed ) in database for record with video_id=".$messagesValue['video_id']);
-        $updateVideoRecord=$db->updateVideoRecord($mysqli, $video_elements['video_id']) ;
+        $updateVideoRecord=$db->updateVideoRecord($mysqli, $messagesValue['video_id']) ;
         if ($updateVideoRecord === false) {
             $processing->writeToLog("Cannot update record in database: ".$db->getLastError());
             exit(1);
